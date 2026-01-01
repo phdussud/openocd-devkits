@@ -636,6 +636,9 @@ This is deprecated from Linux v5.3; prefer using @b{linuxgpiod}.
 @* A JTAG driver that works with the WCH CH347F and CH347T chips.
 When using the CH347T, it must be configured to operate in mode 3 (UART + JTAG).
 
+@item @b{dirtyjtag}
+@* A JTAG driver that works with the DirtyJTAG programmer.
+
 @end itemize
 
 @node About Jim Tcl

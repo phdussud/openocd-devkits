@@ -131,6 +131,7 @@ m4_define([ADAPTER_OPT], [m4_translit(ADAPTER_ARG($1), [_], [-])])
 m4_define([USB1_ADAPTERS],
 	[[[ftdi], [MPSSE mode of FTDI based devices], [FTDI]],
 	[[ch347], [CH347 based devices], [CH347]],
+  [[Dirtyjtag], [DirtyJTAG Programmer], [DIRTYJTAG]],
 	[[stlink], [ST-Link Programmer], [HLADAPTER_STLINK]],
 	[[ti_icdi], [TI ICDI JTAG Programmer], [HLADAPTER_ICDI]],
 	[[ulink], [Keil ULINK JTAG Programmer], [ULINK]],
@@ -413,6 +414,10 @@ AC_ARG_ENABLE([ch347],
   AS_HELP_STRING([--enable-ch347], [Enable building support for CH347]),
   [build_ch347=$enableval], [build_ch347=no])
 
+AC_ARG_ENABLE([dirtyjtag],
+  AS_HELP_STRING([--enable-dirtyjtag], [Enable building support for DirtyJTAG]),
+  [build_dirtyjtag=$enableval], [build_dirtyjtag=no])
+
 AS_CASE(["${host_cpu}"],
   [i?86|x86*], [],
   [
@@ -568,6 +573,12 @@ AS_IF([test "x$build_ch347" = "xyes"], [
   AC_DEFINE([BUILD_CH347], [1], [1 if you want CH347.])
 ], [
   AC_DEFINE([BUILD_CH347], [0], [0 if you don't want CH347.])
+])
+
+AS_IF([test "x$build_dirtyjtag" = "xyes"], [
+  AC_DEFINE([BUILD_DIRTYJTAG], [1], [1 if you want DirtyJTAG.])
+], [
+  AC_DEFINE([BUILD_DIRTYJTAG], [0], [0 if you don't want DirtyJTAG.])
 ])
 
 PKG_CHECK_MODULES([LIBUSB1], [libusb-1.0], [
@@ -777,6 +788,7 @@ AM_CONDITIONAL([BUILD_ESP_COMPRESSION], [test "x$build_esp_compression" = "xyes"
 AM_CONDITIONAL([USE_GCOV], [test "x$enable_gcov" = "xyes"])
 
 AM_CONDITIONAL([BUILD_CH347], [test "x$build_ch347" = "xyes"])
+AM_CONDITIONAL([BUILD_DIRTYJTAG], [test "x$build_dirtyjtag" = "xyes"])
 
 # Look for environ alternatives.  Possibility #1: is environ in unistd.h or stdlib.h?
 AC_MSG_CHECKING([for environ in unistd.h and stdlib.h])

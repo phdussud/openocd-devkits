@@ -225,6 +225,9 @@ ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55dd", MODE="660", GROUP="plugdev", 
 # WCH CH347F chip
 ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55de", MODE="660", GROUP="plugdev", TAG+="uaccess"
 
+# DirtyJTAG programmer
+ATTRS{idVendor}=="1209", ATTRS{idProduct}=="C0CA", MODE="660", GROUP="plugdev", TAG+="uaccess"
+
 # TI/Luminary Stellaris In-Circuit Debug Interface (ICDI) Board
 ATTRS{idVendor}=="1cbe", ATTRS{idProduct}=="00fd", MODE="660", GROUP="plugdev", TAG+="uaccess"
 
