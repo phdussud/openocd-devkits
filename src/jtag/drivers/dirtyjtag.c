@@ -101,7 +101,7 @@ static const size_t dirtyjtag_buffer_size = DIRTYJTAG_BUFFER_SIZE;
 static uint8_t dirtyjtag_buffer[DIRTYJTAG_BUFFER_SIZE];
 static size_t dirtyjtag_buffer_use;
 
-static void dirtyjtag_buffer_flush(void)
+static int dirtyjtag_buffer_flush(void)
 {
 	size_t sent = 0, res;
 
@@ -122,6 +122,8 @@ static void dirtyjtag_buffer_flush(void)
 	assert(sent == to_send);
 
 	dirtyjtag_buffer_use = 0;
+
+	return res;
 }
 
 static uint8_t* dirtyjtag_get_buffer_ptr_for_length(size_t length)
@@ -538,7 +540,7 @@ static int syncbb_execute_queue(struct jtag_command *cmd_queue)
 	 */
 	retval = ERROR_OK;
 
-	while (cmd)
+	while (retval == ERROR_OK && cmd)
 	{
 		switch (cmd->type)
 		{
@@ -589,7 +591,7 @@ static int syncbb_execute_queue(struct jtag_command *cmd_queue)
 			break;
 
 		case JTAG_SLEEP:
-			dirtyjtag_buffer_flush();
+			retval = dirtyjtag_buffer_flush();
 			jtag_sleep(cmd->cmd.sleep->us);
 			break;
 
@@ -597,15 +599,14 @@ static int syncbb_execute_queue(struct jtag_command *cmd_queue)
 			retval = syncbb_execute_tms(cmd);
 			break;
 		default:
-			LOG_ERROR("BUG: unknown JTAG command type encountered");
-			exit(-1);
+			LOG_ERROR("BUG: unknown JTAG command type 0x%X", cmd->type);
+			retval = ERROR_FAIL;
 		}
 		cmd = cmd->next;
 	}
-
-	//dirtyjtag_buffer_flush();
-
-	return retval;
+	if (retval != ERROR_OK)
+		return retval;
+	return dirtyjtag_buffer_flush();
 }
 
 static struct jtag_interface dirtyjtag_interface = {
