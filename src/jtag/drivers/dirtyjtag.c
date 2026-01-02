@@ -214,7 +214,7 @@ static int dirtyjtag_speed(int divisor)
 		divisor};
 
 	dirtyjtag_buffer_append(command, sizeof(command) / sizeof(command[0]));
-
+	dirtyjtag_buffer_flush();
 	return ERROR_OK;
 }
 static int dirtyjtag_getversion(void)
@@ -309,7 +309,8 @@ static int dirtyjtag_khz(int khz, int *divisor)
 		return ERROR_FAIL;
 	}
 
-	*divisor = (khz < 65535) ? khz : 65535;
+	*divisor = (khz < 16000) ? khz : 16000;
+	*divisor = max(5, *divisor);
 	return ERROR_OK;
 }
 
