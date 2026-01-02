@@ -2,6 +2,8 @@
 
 # Welcome to OpenOCD for EasyDevKits!
 
+# Welcome of OpenOCD for DirtyJTAG
+
 - (X)SVF playback to facilitate automated boundary scan and FPGA/CPLD
   programming;
 - debug target support (e.g. ARM, MIPS): single-stepping,
@@ -98,7 +100,7 @@ Note: make sure doxygen is installed, type doxygen --version
 AM335x, ARM-JTAG-EW, ARM-USB-OCD, ARM-USB-TINY, AT91RM9200, axm0432, BCM2835,
 Bus Blaster, Buspirate, Cadence DPI, Cadence vdebug, Chameleon, CMSIS-DAP,
 Cortino, Cypress KitProg, DENX, Digilent JTAG-SMT2, DLC 5, DLP-USB1232H,
-embedded projects, Espressif USB JTAG Programmer,
+embedded projects, DirtyJTAG, Espressif USB JTAG Programmer,
 eStick, FlashLINK, FlossJTAG, Flyswatter, Flyswatter2,
 FTDI FT232R, Gateworks, Hoegl, ICDI, ICEBear, J-Link, JTAG VPI, JTAGkey,
 JTAGkey2, JTAG-lock-pick, KT-Link, Linux GPIOD, Lisa/L, LPC1768-Stick,
