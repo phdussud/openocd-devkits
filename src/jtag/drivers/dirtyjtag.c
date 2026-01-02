@@ -109,29 +109,39 @@ static void dirtyjtag_buffer_flush(void)
 	{
 		return;
 	}
-
-    dirtyjtag_buffer[dirtyjtag_buffer_use] = CMD_STOP;
+	size_t to_send = dirtyjtag_buffer_use;
+	if (dirtyjtag_buffer_use < dirtyjtag_buffer_size)
+	{
+    	dirtyjtag_buffer[dirtyjtag_buffer_use] = CMD_STOP;
+		to_send += 1;
+	}
 
     res = jtag_libusb_bulk_write(usb_handle, dirtyjtag_ep_write, (char *)dirtyjtag_buffer,
-								 dirtyjtag_buffer_use + 1, DIRTYJTAG_USB_TIMEOUT, (int*)&sent);
+								 to_send, DIRTYJTAG_USB_TIMEOUT, (int*)&sent);
 	assert(res == ERROR_OK);
-	assert(sent == dirtyjtag_buffer_use + 1);
+	assert(sent == to_send);
 
 	dirtyjtag_buffer_use = 0;
 }
 
-static void dirtyjtag_buffer_append(const uint8_t *command, size_t length)
+static uint8_t* dirtyjtag_get_buffer_ptr_for_length(size_t length)
 {
-	assert(length < dirtyjtag_buffer_size);
-	assert(command != NULL);
-
-	if ((dirtyjtag_buffer_use + length + 1) > dirtyjtag_buffer_size)
+	assert(length <= dirtyjtag_buffer_size);
+	if ((dirtyjtag_buffer_use + length) >= dirtyjtag_buffer_size)
 	{
 		dirtyjtag_buffer_flush();
 	}
-
-	memcpy(&dirtyjtag_buffer[dirtyjtag_buffer_use], command, length);
+	uint8_t* ptr = &dirtyjtag_buffer[dirtyjtag_buffer_use];
 	dirtyjtag_buffer_use += length;
+	return ptr;
+}
+
+
+static void dirtyjtag_buffer_append(const uint8_t *command, size_t length)
+{
+	assert(command != NULL);
+	uint8_t* ptr = dirtyjtag_get_buffer_ptr_for_length(length);
+	memcpy(ptr, command, length);
 }
 
 /**
@@ -254,6 +264,7 @@ static int dirtyjtag_getversion(void)
 	{
 		LOG_INFO("dirtyJtag version unknown");
 		dirtyjtag_version = 0;
+		return ERROR_JTAG_INIT_FAILED;
 	}
 	LOG_INFO("dirtyjtag version %d", dirtyjtag_version);
 	return ERROR_OK;
@@ -418,9 +429,9 @@ static int syncbb_scan(struct scan_command *cmd)
 	int retval = ERROR_OK;
 	int scan_size = jtag_build_buffer(cmd, &buffer);
 	enum scan_type type = jtag_scan_type(cmd);
-	int sent_bits, sent_bytes, read, written, res;
-	size_t i, buffer_pos = 0;
-	uint8_t xfer_rx[512], xfer_tx[512] = {
+	int sent_bits, i, sent_bytes, read, res;
+	size_t buffer_pos = 0;
+	uint8_t tdo_buf[64], xfer_header[2] = {
 							 CMD_XFER,
 							 0};
 	int pos_last_byte = (scan_size - 1) / 8;
@@ -439,57 +450,58 @@ static int syncbb_scan(struct scan_command *cmd)
 		syncbb_state_move(TAP_DRSHIFT, 0);
 	}
 
-	dirtyjtag_buffer_flush();
-
+	//dirtyjtag_buffer_flush();
 	if (type == SCAN_OUT)
-		xfer_tx[0] |= dirtyjtag_v_options[dirtyjtag_version].no_read;
+		xfer_header[0] |= dirtyjtag_v_options[dirtyjtag_version].no_read;
 	while (scan_size > 0) 
 	{
 		sent_bits = MIN(dirtyjtag_v_options[dirtyjtag_version].max_bits, scan_size);
 		sent_bytes = (sent_bits + 7) / 8;
 		if (sent_bits > 255)
 		{
-			xfer_tx[0] |= EXTEND_LENGTH;
-			xfer_tx[1] = sent_bits - 256;
+			xfer_header[0] |= EXTEND_LENGTH;
+			xfer_header[1] = sent_bits - 256;
 		}
 		else
 		{
-			xfer_tx[0] &= ~EXTEND_LENGTH;
-			xfer_tx[1] = sent_bits;
+			xfer_header[0] &= ~EXTEND_LENGTH;
+			xfer_header[1] = sent_bits;
 		}
+		uint8_t *buf_ptr = dirtyjtag_get_buffer_ptr_for_length(sent_bytes + 2);
+	
+		buf_ptr[0] = xfer_header[0];
+		buf_ptr[1] = xfer_header[1];
+		uint8_t *lbuffer = &buffer[buffer_pos];
 		if (type != SCAN_IN)
 		{
-			memcpy(&xfer_tx[2], &buffer[buffer_pos], sent_bytes);
-			for (i = 2; i < (2 + (size_t)sent_bytes); i++)
+			/* Set TDI bits */		
+			for (i = 0; i < sent_bytes; i++)
 			{
-				xfer_tx[i] = swap_bits(xfer_tx[i]);
+				buf_ptr[i+2] = swap_bits(lbuffer[i]);
 			}
 		}
 		else
 		{
 			/* Set TDI to 0 */
-			memset(&xfer_tx[2], 0, sent_bytes);
+			memset(&buf_ptr[2], 0, sent_bytes);
 		}
-
-		res = jtag_libusb_bulk_write(usb_handle, dirtyjtag_ep_write,
-									 (char *)xfer_tx, sent_bytes + 2, DIRTYJTAG_USB_TIMEOUT, &written);
 
 		if (!dirtyjtag_v_options[dirtyjtag_version].no_read || (type != SCAN_OUT))
 		{
+			dirtyjtag_buffer_flush();
 			read = 0;
 			res = jtag_libusb_bulk_read(usb_handle, dirtyjtag_ep_read,
-										(char *)xfer_rx, (sent_bits > 255) ? sent_bytes : 32, DIRTYJTAG_USB_TIMEOUT, &read);
+										(char *)tdo_buf, (sent_bits > 255) ? sent_bytes : 32, DIRTYJTAG_USB_TIMEOUT, &read);
 			assert(res == ERROR_OK);
 			assert(read >= sent_bytes);
 		}
 
 		if (type != SCAN_OUT)
 		{
-			for (i = 0; i < 32; i++)
+			for (i = 0; i < sent_bytes; i++)
 			{
-				xfer_rx[i] = swap_bits(xfer_rx[i]);
+				lbuffer[i] = swap_bits(tdo_buf[i]);
 			}
-			memcpy(&buffer[buffer_pos], xfer_rx, sent_bytes);
 		}
 
 		scan_size -= sent_bits;
