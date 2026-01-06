@@ -435,7 +435,8 @@ static const struct command_registration dirtyjtag_command_handlers[] = {
 
 static void syncbb_state_move(enum tap_state state, int skip)
 {
-	int i = 0, tms = 0;
+	int i = 0, tms = 0, prev_tms = -1;
+	int clk_count = 0;
 
 	// don't do anything if we are already in the right state; but do execute always the TAP_RESET
 	if (tap_get_state() == state && state != TAP_RESET)
@@ -446,15 +447,25 @@ static void syncbb_state_move(enum tap_state state, int skip)
 	for (i = skip; i < tms_count; i++)
 	{
 		tms = (tms_scan >> i) & 1;
-		dirtyjtag_clk(1, tms, 0);
+		if (tms != prev_tms && clk_count > 0)
+		{
+			dirtyjtag_clk(clk_count, prev_tms, 0);
+			clk_count = 0;
+		}
+		clk_count++;
+		prev_tms = tms;
+	}
+	if (clk_count > 0)
+	{
+		dirtyjtag_clk(clk_count, prev_tms, 0);
 	}
 
 	tap_set_state(state);
 }
 
 /**
- * Clock a bunch of TMS (or SWDIO) transitions, to change the JTAG
- * (or SWD) state machine.
+ * Clock a bunch of TMS transitions, to change the JTAG
+ * state machine.
  */
 static int syncbb_execute_tms(struct jtag_command *cmd)
 {
@@ -463,11 +474,22 @@ static int syncbb_execute_tms(struct jtag_command *cmd)
 
 	LOG_DEBUG_IO("TMS: %d bits", num_bits);
 
-	int tms = 0;
+	int tms = 0, prev_tms = -1;
+	int clk_count = 0;
 	for (unsigned i = 0; i < num_bits; i++)
 	{
 		tms = ((bits[i / 8] >> (i % 8)) & 1);
-		dirtyjtag_clk(1, tms, 0);
+		if (tms != prev_tms && clk_count > 0)
+		{
+			dirtyjtag_clk(clk_count, prev_tms, 0);
+			clk_count = 0;
+		}
+		clk_count++;
+		prev_tms = tms;
+	}
+	if (clk_count > 0)
+	{
+		dirtyjtag_clk(clk_count, prev_tms, 0);
 	}
 
 	return ERROR_OK;
@@ -476,7 +498,8 @@ static int syncbb_execute_tms(struct jtag_command *cmd)
 static int syncbb_path_move(struct pathmove_command *cmd)
 {
 	unsigned int state_count;
-	int tms = 0;
+	int tms = 0, prev_tms = -1;
+	int clk_count = 0;
 	for (state_count = 0; state_count < cmd->num_states; state_count++)
 	{
 		if (tap_state_transition(tap_get_state(), false) == cmd->path[state_count])
@@ -495,9 +518,21 @@ static int syncbb_path_move(struct pathmove_command *cmd)
 			return ERROR_JTAG_TRANSITION_INVALID;
 		}
 
-		dirtyjtag_clk(1, tms, 0);
+		if (tms != prev_tms && clk_count > 0)
+		{
+			dirtyjtag_clk(clk_count, prev_tms, 0);
+			clk_count = 0;
+		}
+		clk_count++;
+		prev_tms = tms;
 		tap_set_state(cmd->path[state_count]);
 	}
+
+	if (clk_count > 0)
+	{
+		dirtyjtag_clk(clk_count, prev_tms, 0);
+	}
+
 	return ERROR_OK;
 }
 
@@ -610,14 +645,30 @@ static int syncbb_scan(struct scan_command *cmd)
 		scan_size -= sent_bits;
 		buffer_pos += sent_bytes;
 	}
-
-	dirtyjtag_write(0, 1, last_bit);
-    dirtyjtag_write(1, 1, last_bit);
-	if (type != SCAN_OUT)
+	/* last bit */
+	if (dirtyjtag_version == 1)
 	{
-		dirtyjtag_get_last_bit(scan_info);
+		dirtyjtag_write(0, 1, last_bit);
+		dirtyjtag_write(1, 1, last_bit);
+		if (type != SCAN_OUT)
+		{
+			dirtyjtag_get_last_bit(scan_info);
+		}
+		dirtyjtag_write(0, 1, last_bit);
 	}
-	dirtyjtag_write(0, 1, last_bit);
+	else
+	{
+		uint8_t xfer_last_bit[] = {
+			CMD_CLK | ((type != SCAN_OUT) ? READOUT : 0x00),
+			(last_bit ? SIG_TDI : 0x00) | SIG_TMS,
+			1
+		};
+		dirtyjtag_buffer_append(xfer_last_bit, sizeof(xfer_last_bit) / sizeof(xfer_last_bit[0]));
+		if (type != SCAN_OUT)
+		{
+			scan_info->last_bit = true;
+		}
+	}
 
 	/* we *KNOW* the above loop transitioned out of
 	* the shift state, so we skip the first state
@@ -662,7 +713,7 @@ static int syncbb_execute_queue(struct jtag_command *cmd_queue)
 
 		case JTAG_STABLECLOCKS:
 			dirtyjtag_clk(cmd->cmd.stableclocks->num_cycles,
-						  (tap_get_state() == TAP_RESET ? SIG_TMS : 0), 0);
+						  ((tap_get_state() == TAP_RESET) ? SIG_TMS : 0), 0);
 			break;
 
 		case JTAG_TLR_RESET: /* renamed from JTAG_STATEMOVE */
