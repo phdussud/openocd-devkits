@@ -26,6 +26,7 @@
 #include <jtag/commands.h>
 #include <helper/time_support.h>
 #include <helper/bits.h>
+#include <helper/replacements.h>
 #include "libusb_helper.h"
 
 
@@ -195,12 +196,23 @@ static int dirtyjtag_buffer_flush(void)
 			{
 				scan_info->read_buffer[i] = swap_bits(tdo_buf[i]);
 			}
+			int last_byte_for_last_bit = -1;
 			scan_info->read_buffer += bytes_to_read;
 			scan_info->bit_index += scan_info->bits_to_read;
+			if (scan_info->last_bit && ((scan_info->bit_index % 8) == 0))
+			{
+				//we need another byte for last bit
+				assert(read == bytes_to_read + 1);
+				assert(bytes_to_read < 64);
+				scan_info->read_buffer[0] = 0; //init last byte
+				last_byte_for_last_bit = 0;
+			}
+
 			scan_info->bits_to_read = 0;
 			if (scan_info->last_bit)
 			{
-				scan_info->read_buffer[-1] = (scan_info->read_buffer[-1] & ~(1 << (scan_info->bit_index % 8))) | (!!tdo_buf[bytes_to_read] << (scan_info->bit_index % 8));
+				scan_info->read_buffer[last_byte_for_last_bit] = (scan_info->read_buffer[last_byte_for_last_bit] &
+					                                              ~(1 << (scan_info->bit_index % 8))) | (!!tdo_buf[bytes_to_read] << (scan_info->bit_index % 8));
 				res = jtag_read_buffer(scan_info->read_buffer_start, scan_info->scan_cmd);
 				if (res != ERROR_OK)
 					res = ERROR_JTAG_QUEUE_FAILED;
@@ -426,7 +438,7 @@ static int dirtyjtag_khz(int khz, int *divisor)
 	}
 
 	*divisor = (khz < 16000) ? khz : 16000;
-	*divisor = max(5, *divisor);
+	*divisor = MAX(5, *divisor);
 	return ERROR_OK;
 }
 
@@ -599,7 +611,7 @@ static int syncbb_scan(struct scan_command *cmd)
 		if (scan_info == NULL)
 		{
 			free(buffer);
-			return ERROR_OUTOFMEMORY;
+			return ERROR_FAIL;
 		}
 	}
 
