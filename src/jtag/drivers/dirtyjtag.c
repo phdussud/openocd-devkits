@@ -180,21 +180,27 @@ static int dirtyjtag_buffer_flush(void)
 	res = ERROR_OK;
 	/* process all pending scan read */
 	struct dirtyjtag_scan_info *scan_info = dirtyjtag_scan_queue;
+	uint8_t tdo_buf[64];
+	int tdo_buf_index = 0;
+	int read = 0;
 	while (scan_info)
 	{
+		assert(scan_info == dirtyjtag_scan_queue);
 		struct dirtyjtag_scan_info *next = scan_info->next;
 		if (scan_info->last_bit || (scan_info->bits_to_read > 0))
 		{
-			uint8_t tdo_buf[64];
-			int read = 0;
+			assert(scan_info->bits_to_read == 0 || scan_info->bit_index % 8 == 0); // we segment reads on byte boundary
 			int bytes_to_read = (scan_info->bits_to_read + 7) / 8;
-			res = jtag_libusb_bulk_read(usb_handle, dirtyjtag_ep_read,
-										(char *)tdo_buf, bytes_to_read+!!scan_info->last_bit, DIRTYJTAG_USB_TIMEOUT, &read);
-			assert(res == ERROR_OK);
-			assert(read >= bytes_to_read);
+			if (read == 0) //no read yet
+			{
+				res = jtag_libusb_bulk_read(usb_handle, dirtyjtag_ep_read,
+											(char *)tdo_buf, 64, DIRTYJTAG_USB_TIMEOUT, &read);
+				assert(res == ERROR_OK);
+			}
+			assert((tdo_buf_index + bytes_to_read + !!scan_info->last_bit) <= read);
 			for (int i = 0; i < bytes_to_read; i++)
 			{
-				scan_info->read_buffer[i] = swap_bits(tdo_buf[i]);
+				scan_info->read_buffer[i] = swap_bits(tdo_buf[tdo_buf_index++]);
 			}
 			int last_byte_for_last_bit = -1;
 			scan_info->read_buffer += bytes_to_read;
@@ -211,8 +217,9 @@ static int dirtyjtag_buffer_flush(void)
 			scan_info->bits_to_read = 0;
 			if (scan_info->last_bit)
 			{
+				uint8_t last_bit_byte = tdo_buf[tdo_buf_index++];
 				scan_info->read_buffer[last_byte_for_last_bit] = (scan_info->read_buffer[last_byte_for_last_bit] &
-					                                              ~(1 << (scan_info->bit_index % 8))) | (!!tdo_buf[bytes_to_read] << (scan_info->bit_index % 8));
+																  ~(1 << (scan_info->bit_index % 8))) | (!!last_bit_byte << (scan_info->bit_index % 8));
 				res = jtag_read_buffer(scan_info->read_buffer_start, scan_info->scan_cmd);
 				if (res != ERROR_OK)
 					res = ERROR_JTAG_QUEUE_FAILED;
@@ -232,6 +239,7 @@ static int dirtyjtag_buffer_flush(void)
 			release_scan_info_head(scan_info);
 		scan_info = next;
 	}
+	assert(read == tdo_buf_index);
 	return res;
 }
 
