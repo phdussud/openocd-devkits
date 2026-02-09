@@ -117,7 +117,7 @@ static struct dirtyjtag_scan_info *dirtyjtag_scan_queue;
 static struct dirtyjtag_scan_info *dirtyjtag_scan_tail;
 static struct dirtyjtag_scan_info *dirtyjtag_scan_free_list;
 /* allocate from the free list or heap alloc*/
-static struct dirtyjtag_scan_info *allocate_scan_info()
+static struct dirtyjtag_scan_info *allocate_scan_info(void)
 {
 	struct dirtyjtag_scan_info *scan_info;
 	if (dirtyjtag_scan_free_list)
